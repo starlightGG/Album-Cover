@@ -40,11 +40,18 @@ canvas{display:block;margin:0 auto;width:auto;height:auto;max-width:100%;max-hei
 .sub{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
 .chk{display:flex;gap:16px;flex-wrap:wrap}
 .chk label{display:inline-flex;align-items:center;gap:6px;color:#eef0f7;font-size:13.5px;cursor:pointer}
-input[type=text],select{width:100%;padding:8px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);color:#fff;font:inherit}
+input[type=text],input[type=number],select{width:100%;padding:8px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);color:#fff;font:inherit}
+.mb{padding:0 12px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eef0f7;font:inherit;font-size:13px;cursor:pointer}
+.mb:disabled,input:disabled,select:disabled{opacity:.4;cursor:not-allowed}
 input[type=color]{width:100%;height:36px;padding:2px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);cursor:pointer}
 input[type=range].mini{width:100%;accent-color:var(--acc)}
 input[type=checkbox]{accent-color:var(--acc);width:16px;height:16px}
 select option{color:#111}
+/* while recording: keep the canvas alive for capture but make it invisible and tiny, hide every other thing that repaints */
+.rec-on header,.rec-on .deck{display:none}
+.rec-on body,body.rec-on{background:#0a0b12}
+.rec-on .stage{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;border:0;box-shadow:none;border-radius:0}
+.rec-on canvas{width:2px;height:2px;max-width:none;max-height:none}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .export{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 #rec{padding:13px 24px;border:0;border-radius:12px;background:var(--acc);color:#0a0b12;font:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 8px 28px color-mix(in srgb,var(--acc) 45%,transparent);transition:transform .12s}
@@ -141,16 +148,22 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
           <option value="fireflies">Fireflies</option>
         </select></div>
       <div class="tile field"><label for="accent">Accent color (auto from cover)</label><input id="accent" type="color" value="#6c7bff"></div>
-      <div class="tile field wide"><label>Beat detection &mdash; pre-analyzed, zero lag</label><div class="sub">
+      <div class="tile field wide"><label>Beat detection &mdash; kicks and bass only</label><div class="sub">
         <div><label for="bsrc">Listen to</label><select id="bsrc">
-          <option value="low">Bass and kicks (Pure low-pass)</option>
-          <option value="both">Bass + full mix</option>
-          <option value="full">Full mix</option>
+          <option value="low">Kicks + bass</option>
+          <option value="kick">Kicks only</option>
         </select></div>
         <div><label for="bsize">Trigger on</label><select id="bsize">
-          <option value="all">Every jump above average</option>
+          <option value="all">Every hit</option>
           <option value="big">Strong hits only</option>
         </select></div>
+        <div><label for="bmode">Beat mode</label><select id="bmode">
+          <option value="hits">Detected hits</option>
+          <option value="manual">BPM grid (manual)</option>
+          <option value="auto">BPM grid (auto)</option>
+          <option value="live">BPM grid (live, follows halftime)</option>
+        </select></div>
+        <div><label for="bpm">BPM <span id="bmul"></span></label><div style="display:flex;gap:6px"><input id="bpm" type="number" min="30" max="300" step="0.1" value="120" style="flex:1;min-width:0"><button type="button" class="mb" id="bpm-half" title="Half the BPM (halftime). In auto/live it scales the detected tempo.">&frac12;&times;</button><button type="button" class="mb" id="bpm-dbl" title="Double BPM">2&times;</button></div></div>
         <div><label for="sens">Sensitivity</label><input class="mini" id="sens" type="range" min="2" max="98" step="0.5" value="50"></div>
         <div><label for="gap">Beat spacing</label><input class="mini" id="gap" type="range" min="60" max="600" step="10" value="120"></div>
       </div></div>
@@ -183,9 +196,9 @@ $('aspect').onchange = e => setAspect(e.target.value);
 setAspect($('aspect').value);
 
 let AC, analyser, spk, dest, anaDelay, anaDelayVal = 0, freq, td;
-let buf = null, bassBuf = null, node = null, startT = 0, offset = 0, playing = false, lastPos = 0;
+let buf = null, bassBuf = null, kickBuf = null, node = null, startT = 0, offset = 0, playing = false, lastPos = 0;
 let img = null, bgThumb = null, bgBlur = null, acc = [108, 123, 255], accH = 235;
-let beat = 0, energy = 0, rot = 0, flipA = 0, parts = [], rings = [], notes = [], sway = 1, gridPhase = 0, lastNow = 0;
+let bpmMul = 1, lastBpmUi = 0, lastMsgAt = 0, beat = 0, energy = 0, rot = 0, flipA = 0, parts = [], rings = [], notes = [], sway = 1, gridPhase = 0, lastNow = 0;
 let recording = false, rec = null, chunks = [], cancelled = false, seeking = false;
 const msg = t => $('msg').textContent = t;
 const fmt = s => { s = Math.floor(s || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -223,24 +236,29 @@ function ensureAC() {
   td = new Uint8Array(analyser.fftSize);
 }
 
-// ---- offline audio processing to isolate pure kick & bass stem ----
-async function isolateBassBuffer(sourceBuf) {
+// ---- offline filtering: isolate kick + bass range (mono) ----
+// chain = [[type, freq, Q, gain?], ...]
+async function filterBuffer(sourceBuf, chain) {
   try {
-    const offlineCtx = new OfflineAudioContext(sourceBuf.numberOfChannels, sourceBuf.length, sourceBuf.sampleRate);
-    const srcNode = offlineCtx.createBufferSource();
-    srcNode.buffer = sourceBuf;
-    const lp1 = offlineCtx.createBiquadFilter(); lp1.type = 'lowpass'; lp1.frequency.value = 115; lp1.Q.value = 1.0;
-    const lp2 = offlineCtx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 110; lp2.Q.value = 1.2;
-    const lp3 = offlineCtx.createBiquadFilter(); lp3.type = 'lowpass'; lp3.frequency.value = 105; lp3.Q.value = 1.5;
-    const lp4 = offlineCtx.createBiquadFilter(); lp4.type = 'lowpass'; lp4.frequency.value = 100; lp4.Q.value = 2.0;
-    const boost = offlineCtx.createBiquadFilter(); boost.type = 'peaking'; boost.frequency.value = 55; boost.gain.value = 15; boost.Q.value = 2.5;
-    srcNode.connect(lp1); lp1.connect(lp2); lp2.connect(lp3); lp3.connect(lp4); lp4.connect(boost); boost.connect(offlineCtx.destination);
-    srcNode.start(0);
-    return await offlineCtx.startRendering();
+    const oc = new OfflineAudioContext(1, sourceBuf.length, sourceBuf.sampleRate);
+    const src = oc.createBufferSource(); src.buffer = sourceBuf;
+    let prev = src;
+    for (const [type, f, q, g] of chain) {
+      const b = oc.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q;
+      if (g != null) b.gain.value = g;
+      prev.connect(b); prev = b;
+    }
+    prev.connect(oc.destination);
+    src.start(0);
+    return await oc.startRendering();
   } catch (err) {
     return sourceBuf;
   }
 }
+// kicks + bass: 30-150 Hz, 4-pole low-pass
+const CHAIN_LOW = [['highpass', 30, .7], ['highpass', 30, .7], ['lowpass', 150, .7], ['lowpass', 150, .7], ['lowpass', 150, .7], ['lowpass', 150, .7]];
+// kicks only: 35-100 Hz, 4-pole low-pass, boosted around the kick fundamental
+const CHAIN_KICK = [['highpass', 35, .7], ['highpass', 35, .7], ['lowpass', 100, .7], ['lowpass', 100, .7], ['lowpass', 100, .7], ['lowpass', 100, .7], ['peaking', 55, 1.5, 6]];
 
 // ---- playback position = what you HEAR (output latency compensated automatically) ----
 function heardCtxTime() {
@@ -291,56 +309,52 @@ const seekEl = $('seek');
 seekEl.oninput = () => { seeking = true; if (buf) $('time').textContent = fmt(seekEl.value / 1000 * buf.duration) + ' / ' + fmt(buf.duration); };
 seekEl.onchange = () => { if (buf) { const t = seekEl.value / 1000 * buf.duration; if (playing) play(t); else offset = t; } seeking = false; };
 
-// ---- offline beat map (computed once per track, so no realtime detection lag) ----
+// ---- offline kick/bass beat map (computed once per track) ----
+// Onset function: fast envelope follower vs slow envelope follower on the isolated low band.
+// A kick or new bass note makes the fast follower jump far above the slow one; sustained bass doesn't.
 const HOP = 128;           // samples per analysis hop (~3 ms)
-const ONSET_COMP = 0.015;  // seconds: detector + low-pass group delay, fired earlier by this much
-let fxLow = null, fxFull = null, fxBoth = null, beats = [], beatIdx = 0;
+const ONSET_COMP = 0.015;  // seconds: fire slightly early to cancel filter + detector delay
+let fxLow = null, fxKick = null, beats = [], beatIdx = 0;
 
 function pct(arr, q) { const c = Float32Array.from(arr).sort(); return c[Math.min(c.length - 1, Math.floor(c.length * q))] || 0; }
-function onsetFlux(b, win) {
-  const ch = b.numberOfChannels, n = Math.floor(b.length / HOP);
-  const hsq = new Float64Array(n);
-  for (let c = 0; c < ch; c++) {
-    const d = b.getChannelData(c);
-    for (let i = 0; i < n; i++) { let s = 0; const o = i * HOP; for (let k = 0; k < HOP; k++) { const v = d[o + k]; s += v * v; } hsq[i] += s / ch; }
-  }
-  const W2 = Math.max(1, Math.round(win / HOP)), r = new Float32Array(n);
-  let run = 0;
+function onsetFn(b) {
+  const d = b.getChannelData(0), n = Math.floor(b.length / HOP), dt = HOP / b.sampleRate;
+  const p = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let m = 0; const o = i * HOP; for (let k = 0; k < HOP; k++) { const a = Math.abs(d[o + k]); if (a > m) m = a; } p[i] = m; }
+  const eps = Math.max(1e-5, pct(p, .99) * .03);
+  const aFd = 1 - Math.exp(-dt / .03), aSu = 1 - Math.exp(-dt / .12), aSd = 1 - Math.exp(-dt / .25);
+  const f = new Float32Array(n); let fast = 0, slow = 0;
   for (let i = 0; i < n; i++) {
-    run += hsq[i]; if (i >= W2) run -= hsq[i - W2];
-    r[i] = Math.sqrt(Math.max(0, run) / (Math.min(i + 1, W2) * HOP));
+    const v = p[i];
+    fast = v > fast ? v : fast + (v - fast) * aFd;
+    slow += (v - slow) * (v > slow ? aSu : aSd);
+    f[i] = Math.max(0, Math.log(fast + eps) - Math.log(slow + eps));
   }
-  const eps = Math.max(1e-6, pct(r, .99) * .02), L = new Float32Array(n), f = new Float32Array(n);
-  for (let i = 0; i < n; i++) L[i] = Math.log(r[i] + eps);
-  for (let i = 4; i < n; i++) f[i] = Math.max(0, L[i] - L[i - 4]);
   const norm = pct(f, .99) || 1;
   for (let i = 0; i < n; i++) f[i] /= norm;
   return f;
 }
-function makeFx(f) {
+function makeFx(f, sr) {
   const n = f.length, P = new Float64Array(n + 1), P2 = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) { P[i + 1] = P[i] + f[i]; P2[i + 1] = P2[i] + f[i] * f[i]; }
-  return { f, P, P2 };
+  const fd = new Float32Array(n >> 1);
+  for (let i = 0; i < fd.length; i++) fd[i] = Math.max(f[2 * i], f[2 * i + 1]);
+  return { f, P, P2, fd, dtd: 2 * HOP / sr, gBpm: null, curve: null };
 }
 async function analyzeTrack() {
-  const lowF = onsetFlux(bassBuf, 1024);
+  fxLow = makeFx(onsetFn(bassBuf), bassBuf.sampleRate);
   await new Promise(r => setTimeout(r, 0));
-  const fullF = onsetFlux(buf, 512);
-  const bothF = new Float32Array(Math.min(lowF.length, fullF.length));
-  for (let i = 0; i < bothF.length; i++) bothF[i] = lowF[i] * .6 + fullF[i] * .4;
-  fxLow = makeFx(lowF); fxFull = makeFx(fullF); fxBoth = makeFx(bothF);
+  fxKick = makeFx(onsetFn(kickBuf), kickBuf.sampleRate);
 }
 function seekBeats(p) {
   let lo = 0, hi = beats.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (beats[m].t < p) lo = m + 1; else hi = m; }
   beatIdx = lo;
 }
-function buildBeats() {
-  beats = [];
-  const src = $('bsrc').value, fx = src === 'low' ? fxLow : src === 'full' ? fxFull : fxBoth;
-  if (!fx || !buf) return;
+const curFx = () => $('bsrc').value === 'kick' ? fxKick : fxLow;
+function buildHitBeats(fx) {
   const f = fx.f, P = fx.P, P2 = fx.P2, n = f.length, sr = buf.sampleRate, R = Math.round(1.5 * sr / HOP);
-  const sens = +$('sens').value / 100, zT = 2.1 - sens * 1.45, minF = 0.06 + (1 - sens) * 0.22;
+  const sens = +$('sens').value / 100, zT = 2.0 - sens * 1.4, minF = 0.06 + (1 - sens) * 0.2;
   const gap = +$('gap').value / 1000, big = $('bsize').value === 'big', strongZ = zT + .55 + (1 - sens) * .45;
   let lastT = -10;
   for (let i = 4; i < n - 4; i++) {
@@ -357,9 +371,123 @@ function buildBeats() {
     if (beats.length && t - lastT < gap) { if (s > beats[beats.length - 1].s) { beats[beats.length - 1] = { t, s }; lastT = t; } continue; }
     beats.push({ t, s }); lastT = t;
   }
+}
+// ---- BPM grid (manual / auto / live) ----
+const BPM_MIN = 50, BPM_MAX = 200, LIVE_STEP = 1.5;
+function tempoCands(fd, a, b, dtd, sigma) {
+  const N = b - a, lMin = Math.max(2, Math.floor(60 / BPM_MAX / dtd)), lMax = Math.ceil(60 / BPM_MIN / dtd);
+  if (N < lMax * 3) return [];
+  let m = 0; for (let i = a; i < b; i++) m += fd[i]; m /= N;
+  const g = new Float32Array(N); for (let i = 0; i < N; i++) g[i] = fd[a + i] - m;
+  const lo = Math.max(1, lMin >> 1), top = lMax * 2 + 1, r = new Float32Array(top + 2);
+  for (let L = lo; L <= top; L++) { let s = 0; const e = N - L; for (let i = 0; i < e; i++) s += g[i] * g[i + L]; r[L] = s / (N - L); }
+  const sc = new Float32Array(lMax + 2);
+  for (let L = lMin; L <= lMax; L++) {
+    const bpm = 60 / (L * dtd), pw = Math.exp(-.5 * Math.pow(Math.log2(bpm / 120) / sigma, 2));
+    // if there is just as much energy at half the lag, the real tempo is the faster one
+    const h = L >> 1, rh = Math.max(0, r[h - 1], r[h], r[h + 1]), pen = 1 - .6 * Math.min(1, rh / Math.max(r[L], 1e-9));
+    sc[L] = Math.max(0, r[L] + .5 * r[2 * L]) * pw * pen;
+  }
+  const out = [];
+  for (let L = lMin + 1; L < lMax; L++) if (sc[L] > 0 && sc[L] > sc[L - 1] && sc[L] >= sc[L + 1]) {
+    const y0 = sc[L - 1], y1 = sc[L], y2 = sc[L + 1], d = y0 - 2 * y1 + y2, off = d ? .5 * (y0 - y2) / d : 0;
+    out.push({ bpm: 60 / ((L + off) * dtd), s: y1 });
+  }
+  out.sort((x, y) => y.s - x.s);
+  return out.slice(0, 4);
+}
+function globalBpm(fx) { const c = tempoCands(fx.fd, 0, fx.fd.length, fx.dtd, .9); return c.length ? c[0].bpm : 120; }
+function liveCurve(fx, dur) {
+  const fd = fx.fd, dtd = fx.dtd, win = Math.round(6 / dtd), curve = []; let prev = 0, first = -1;
+  for (let t = 0; t <= dur + LIVE_STEP; t += LIVE_STEP) {
+    const c = Math.round(t / dtd), a = Math.max(0, c - (win >> 1)), b = Math.min(fd.length, c + (win >> 1));
+    const cands = tempoCands(fd, a, b, dtd, 1.4);
+    let best = 0, bw = 0;
+    for (const k of cands) { const w = k.s * (!prev || Math.abs(k.bpm / prev - 1) < .08 ? 1 : .72); if (w > bw) { bw = w; best = k.bpm; } }
+    if (best) { prev = best; if (first < 0) first = curve.length; }
+    curve.push({ t, bpm: prev });
+  }
+  const fill = first < 0 ? 120 : curve[first].bpm;
+  for (const p of curve) if (!p.bpm) p.bpm = fill;
+  return curve;
+}
+function curveAt(c, t) {
+  const x = t / LIVE_STEP, i = Math.min(c.length - 1, Math.max(0, Math.floor(x))), j = Math.min(c.length - 1, i + 1), u = Math.min(1, Math.max(0, x - i));
+  return c[i].bpm * (1 - u) + c[j].bpm * u;
+}
+function bestPhase(f, hopS, P, tMax) {
+  const steps = Math.max(8, Math.round(P / hopS)); let best = 0, bs = -1;
+  for (let k = 0; k < steps; k++) {
+    const ph = k * P / steps; let s = 0;
+    for (let t = ph; t < tMax; t += P) { const i = Math.round(t / hopS); let m = 0; for (let j = -2; j <= 2; j++) { const v = f[i + j]; if (v > m) m = v; } s += m; }
+    if (s > bs) { bs = s; best = ph; }
+  }
+  return best;
+}
+// walks the grid beat by beat, snapping to the nearest kick/bass onset so it never drifts
+function trackGrid(f, hopS, dur, periodAt, t0, minOn) {
+  const out = []; let t = t0, miss = 99;
+  while (t < dur) {
+    const P = 60 / periodAt(t), w = Math.max(2, Math.round(.18 * P / hopS)), i0 = Math.round(t / hopS);
+    let bi = -1, bv = minOn;
+    for (let j = -w; j <= w; j++) { const v = f[i0 + j]; if (v === undefined) continue; const sc = v * (1 - .5 * Math.abs(j) / w); if (sc > bv) { bv = sc; bi = i0 + j; } }
+    let s;
+    if (bi >= 0) { t += .7 * (bi * hopS - t); s = Math.min(1, .35 + f[bi] * .65); miss = 0; }
+    else {
+      miss++; s = .45;
+      if (miss >= 2) { // lost the grid (tempo change / halftime): re-lock on the strongest nearby hit
+        let rb = -1, rv = .4; const a = Math.round((t - .5 * P) / hopS), e = Math.round((t + 1.2 * P) / hopS);
+        for (let i = Math.max(0, a); i <= e && i < f.length; i++) if (f[i] > rv) { rv = f[i]; rb = i; }
+        if (rb >= 0) { t = rb * hopS; s = Math.min(1, .35 + f[rb] * .65); miss = 0; }
+      }
+    }
+    if (miss < 8) out.push({ t: Math.max(0, t - ONSET_COMP), s });
+    t += P;
+  }
+  return out;
+}
+
+function buildGridBeats(fx, mode) {
+  const hopS = HOP / buf.sampleRate, dur = buf.duration, sens = +$('sens').value / 100, minOn = .04 + (1 - sens) * .14;
+  let periodAt, bpm0;
+  if (mode === 'live') {
+    if (!fx.curve) fx.curve = liveCurve(fx, dur);
+    const c = fx.curve; periodAt = t => curveAt(c, t) * bpmMul; bpm0 = c[0].bpm * bpmMul;
+  } else {
+    let bpm;
+    if (mode === 'auto') { if (fx.gBpm == null) fx.gBpm = globalBpm(fx); bpm = fx.gBpm * bpmMul; $('bpm').value = bpm.toFixed(1); }
+    else bpm = Math.min(300, Math.max(30, +$('bpm').value || 120));
+    periodAt = () => bpm; bpm0 = bpm;
+  }
+  const t0 = bestPhase(fx.f, hopS, 60 / bpm0, Math.min(40, dur));
+  beats = trackGrid(fx.f, hopS, dur, periodAt, t0, minOn);
+}
+function syncBpmUi() {
+  const m = $('bmode').value;
+  $('bpm').disabled = m !== 'manual';
+  $('bpm-half').disabled = $('bpm-dbl').disabled = m === 'hits';
+  $('bmul').textContent = m === 'auto' || m === 'live' ? (bpmMul === 1 ? '' : '(\u00d7' + bpmMul + ')') : '';
+  $('gap').disabled = $('bsize').disabled = m !== 'hits';
+}
+function buildBeats() {
+  beats = []; syncBpmUi();
+  const fx = curFx(), mode = $('bmode').value;
+  if (!fx || !buf) return;
+  if (mode === 'hits') buildHitBeats(fx); else buildGridBeats(fx, mode);
   if (playing) seekBeats(pos());
 }
 ['bsrc', 'bsize'].forEach(id => $(id).onchange = buildBeats);
+$('bmode').onchange = () => { bpmMul = 1; buildBeats(); };
+$('bpm').oninput = buildBeats;
+// manual: edits the number. auto / live: scales the detected tempo (halftime / double time)
+function scaleBpm(k) {
+  if ($('bmode').value === 'manual') $('bpm').value = Math.min(300, Math.max(30, (+$('bpm').value || 120) * k)).toFixed(1);
+  else bpmMul = Math.min(4, Math.max(.25, bpmMul * k));
+  buildBeats();
+}
+$('bpm-half').onclick = () => scaleBpm(.5);
+$('bpm-dbl').onclick = () => scaleBpm(2);
+syncBpmUi();
 ['sens', 'gap'].forEach(id => $(id).oninput = buildBeats);
 
 function analyze(p, dt) {
@@ -462,25 +590,24 @@ function buildBlurBg(im) {
 }
 
 async function loadAudio(f) {
-  pause(); msg('Reading and isolating bass stem…'); ensureAC();
+  pause(); msg('Reading audio…'); ensureAC();
   $('play').disabled = $('rec').disabled = seekEl.disabled = true;
   try {
     const ab = await f.arrayBuffer();
-    const rawBuf = await new Promise((res, rej) => { const p = AC.decodeAudioData(ab, res, rej); if (p && p.catch) p.catch(rej); });
-    buf = rawBuf;
-    msg('Processing sub-bass and kick isolation…');
-    bassBuf = await isolateBassBuffer(rawBuf);
+    buf = await new Promise((res, rej) => { const p = AC.decodeAudioData(ab, res, rej); if (p && p.catch) p.catch(rej); });
+    msg('Isolating kicks and bass…');
+    [bassBuf, kickBuf] = await Promise.all([filterBuffer(buf, CHAIN_LOW), filterBuffer(buf, CHAIN_KICK)]);
     msg('Mapping beats…');
     await new Promise(r => setTimeout(r, 0));
     await analyzeTrack();
-    buildBeats();
+    bpmMul = 1; buildBeats();
 
-    offset = 0; beatIdx = 0;
+    bpmMul = 1; offset = 0; beatIdx = 0;
     $('aname').textContent = f.name;
     $('play').disabled = $('rec').disabled = seekEl.disabled = false;
     msg('Ready. Press play to preview, then Save as video.');
   } catch (err) {
-    buf = bassBuf = null; beats = []; msg('Could not read that audio file. Try MP3, WAV, M4A or OGG.');
+    buf = bassBuf = kickBuf = null; beats = []; msg('Could not read that audio file. Try MP3, WAV, M4A or OGG.');
   }
 }
 function loadImage(f) {
@@ -691,6 +818,10 @@ function draw(now) {
   }
 
   const curPos = pos();
+  if (playing && !recording && $('bmode').value === 'live' && now - lastBpmUi > 400) {
+    const fx = curFx(); lastBpmUi = now;
+    if (fx && fx.curve) $('bpm').value = (curveAt(fx.curve, curPos) * bpmMul).toFixed(1);
+  }
   const hit = analyze(curPos, dt), mode = $('mode').value;
   ctx.fillStyle = '#0a0b12'; ctx.fillRect(0, 0, W, H);
   drawBG($('bg').value, t, dt, s);
@@ -843,17 +974,21 @@ function draw(now) {
   const bw2 = (70 + energy * 520) * s; ctx.fillStyle = A(1);
   ctx.beginPath(); ctx.roundRect(W / 2 - bw2 / 2, H * .936, bw2, 5 * s, 3 * s); ctx.fill();
 
-  stage.style.setProperty('--beat', Math.min(beat, 1).toFixed(3));
   const d = buf ? buf.duration : 0;
-  if (!seeking) { seekEl.value = d ? curPos / d * 1000 : 0; $('time').textContent = fmt(curPos) + ' / ' + fmt(d); }
-  seekEl.style.setProperty('--p', (seekEl.value / 10) + '%');
-  if (recording && d) msg('Recording… ' + Math.round(curPos / d * 100) + '%. Keep this tab open.');
+  if (recording) {
+    if (d && now - lastMsgAt > 500) { lastMsgAt = now; msg('Recording… ' + Math.round(curPos / d * 100) + '%. Preview is hidden to keep it smooth. Keep this tab open.'); }
+  } else {
+    stage.style.setProperty('--beat', Math.min(beat, 1).toFixed(3));
+    if (!seeking) { seekEl.value = d ? curPos / d * 1000 : 0; $('time').textContent = fmt(curPos) + ' / ' + fmt(d); }
+    seekEl.style.setProperty('--p', (seekEl.value / 10) + '%');
+  }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
+
 // ---- video export (60 fps, normal bitrate, current aspect ratio) ----
 function setBusy(b) {
-  recording = b;
+  recording = b; document.body.classList.toggle('rec-on', b);
   $('rec').disabled = $('play').disabled = seekEl.disabled = b;
   $('aud').disabled = $('img').disabled = $('aspect').disabled = b;
   $('cancel').hidden = !b;
@@ -862,7 +997,7 @@ $('rec').onclick = () => {
   if (!buf) return;
   if (!window.MediaRecorder) { msg('This browser cannot record video. Try Chrome, Edge, Firefox or Safari 14.1+.'); return; }
   ensureAC(); AC.resume(); pause(); offset = 0;
-  const REC_FPS = 60;
+  const REC_FPS = 120;
   const bitrate = Math.max(8000000, W * H * REC_FPS * 0.25);
   const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   const mime = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -886,9 +1021,17 @@ $('rec').onclick = () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type })); a.download = name; a.click();
     msg('Saved ' + name + '.');
   };
-  setBusy(true); rec.start(500); play(0);
+  // pre-warm: hide the UI and let the canvas settle for a moment BEFORE recording starts,
+  // then start the recorder and the audio together on the recorder's own start event
+  setBusy(true); lastMsgAt = performance.now() + 3000; msg("Getting ready… recording starts in 3 seconds");
+  anaDelay.delayTime.cancelScheduledValues(0); anaDelay.delayTime.value = 0; anaDelayVal = 0;
+  setTimeout(async () => {
+    if (cancelled) return;
+    try { await AC.resume(); rec.start(500); play(0); }
+    catch (err) { cancelled = true; pause(); try { rec.stop(); } catch (e) { rec.onstop(); } msg('Could not start recording: ' + (err && err.message || err)); }
+  }, 3000);
 };
-$('cancel').onclick = () => { cancelled = true; pause(); rec.stop(); };
+$('cancel').onclick = () => { cancelled = true; pause(); if (rec.state !== 'inactive') rec.stop(); else rec.onstop(); };
 </script>
 </body>
 </html>
