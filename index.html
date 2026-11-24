@@ -174,6 +174,7 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage'), root = document.documentElement;
@@ -198,7 +199,7 @@ setAspect($('aspect').value);
 let AC, analyser, spk, dest, anaDelay, anaDelayVal = 0, freq, td;
 let buf = null, bassBuf = null, kickBuf = null, node = null, startT = 0, offset = 0, playing = false, lastPos = 0;
 let img = null, bgThumb = null, bgBlur = null, acc = [108, 123, 255], accH = 235;
-let bpmMul = 1, lastBpmUi = 0, lastMsgAt = 0, beat = 0, energy = 0, rot = 0, flipA = 0, parts = [], rings = [], notes = [], sway = 1, gridPhase = 0, lastNow = 0;
+let offline = false, bpmMul = 1, lastBpmUi = 0, lastMsgAt = 0, beat = 0, energy = 0, rot = 0, flipA = 0, parts = [], rings = [], notes = [], sway = 1, gridPhase = 0, lastNow = 0;
 let recording = false, rec = null, chunks = [], cancelled = false, seeking = false;
 const msg = t => $('msg').textContent = t;
 const fmt = s => { s = Math.floor(s || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -491,8 +492,8 @@ syncBpmUi();
 ['sens', 'gap'].forEach(id => $(id).oninput = buildBeats);
 
 function analyze(p, dt) {
-  if (!analyser || !playing) { beat *= Math.exp(-dt * 6.5); energy = .05; return 0; }
-  analyser.getByteFrequencyData(freq);
+  if ((!offline && !analyser) || !playing) { beat *= Math.exp(-dt * 6.5); energy = .05; return 0; }
+  if (!offline) analyser.getByteFrequencyData(freq);
   let e = 0; for (let i = 1; i < 400; i++) e += freq[i];
   energy = e / (399 * 255);
   beat *= Math.exp(-dt * 6.5);
@@ -806,18 +807,19 @@ function drawBG(m, t, dt, s) {
 }
 
 // ---- frame ----
-function draw(now) {
+function draw(now) { if (!offline) frame(now); requestAnimationFrame(draw); }
+function frame(now, forcedPos) {
   const dt = Math.min(.1, (now - (lastNow || now)) / 1000), t = now / 1000; lastNow = now;
   const s = Math.min(W, H) / 720;
 
   // keep the spectrum visuals aligned with what the speakers are playing
-  if (AC && playing) {
+  if (AC && playing && !offline) {
     const lag = recording ? 0 : Math.max(0, AC.currentTime - heardCtxTime());
     const want = Math.min(.5, Math.max(0, lag - ANA_WIN));
     if (Math.abs(want - anaDelayVal) > .004) { anaDelayVal = want; anaDelay.delayTime.setTargetAtTime(want, AC.currentTime, .05); }
   }
 
-  const curPos = pos();
+  const curPos = forcedPos != null ? forcedPos : pos();
   if (playing && !recording && $('bmode').value === 'live' && now - lastBpmUi > 400) {
     const fx = curFx(); lastBpmUi = now;
     if (fx && fx.curve) $('bpm').value = (curveAt(fx.curve, curPos) * bpmMul).toFixed(1);
@@ -876,7 +878,7 @@ function draw(now) {
   }
   if (mode === 'wave') {
     size *= 1 + beat * .05;
-    if (analyser && playing) analyser.getByteTimeDomainData(td);
+    if (!offline && analyser && playing) analyser.getByteTimeDomainData(td);
     ctx.beginPath();
     for (let x = 0; x <= W; x += 4) {
       const v = playing && td ? (td[Math.floor(x / W * (td.length - 1))] - 128) / 128 : Math.sin(x / 90 + t * 2) * .04;
@@ -976,13 +978,12 @@ function draw(now) {
 
   const d = buf ? buf.duration : 0;
   if (recording) {
-    if (d && now - lastMsgAt > 500) { lastMsgAt = now; msg('Recording… ' + Math.round(curPos / d * 100) + '%. Preview is hidden to keep it smooth. Keep this tab open.'); }
+    if (!offline && d && now - lastMsgAt > 500) { lastMsgAt = now; msg('Recording… ' + Math.round(curPos / d * 100) + '%. Preview is hidden to keep it smooth. Keep this tab open.'); }
   } else {
     stage.style.setProperty('--beat', Math.min(beat, 1).toFixed(3));
     if (!seeking) { seekEl.value = d ? curPos / d * 1000 : 0; $('time').textContent = fmt(curPos) + ' / ' + fmt(d); }
     seekEl.style.setProperty('--p', (seekEl.value / 10) + '%');
   }
-  requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
 
@@ -993,11 +994,139 @@ function setBusy(b) {
   $('aud').disabled = $('img').disabled = $('aspect').disabled = b;
   $('cancel').hidden = !b;
 }
+// ---- offline (non-realtime) export: WebCodecs + mp4-muxer ----
+// Frames are rendered one by one at exact timestamps and the audio is encoded straight from the decoded buffer,
+// so nothing depends on real-time playback and nothing can lag.
+const FFT_N = 4096; let fftCos, fftSin, fftRev, fftWin, fftRe, fftIm; const fftSm = new Float32Array(FFT_N / 2);
+function initFFT() {
+  if (fftCos) return;
+  fftCos = new Float32Array(FFT_N / 2); fftSin = new Float32Array(FFT_N / 2);
+  for (let k = 0; k < FFT_N / 2; k++) { fftCos[k] = Math.cos(2 * Math.PI * k / FFT_N); fftSin[k] = Math.sin(2 * Math.PI * k / FFT_N); }
+  fftRev = new Uint16Array(FFT_N); const bits = Math.log2(FFT_N);
+  for (let i = 0; i < FFT_N; i++) { let r = 0; for (let b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b); fftRev[i] = r; }
+  fftWin = new Float32Array(FFT_N);
+  for (let i = 0; i < FFT_N; i++) fftWin[i] = .42 - .5 * Math.cos(2 * Math.PI * i / FFT_N) + .08 * Math.cos(4 * Math.PI * i / FFT_N);
+  fftRe = new Float32Array(FFT_N); fftIm = new Float32Array(FFT_N);
+}
+// fills freq[] and td[] the same way an AnalyserNode would (same window, smoothing .2, -100..-30 dB)
+function fftSpectrum(chs, end) {
+  const start = end - FFT_N, len = chs[0].length, nc = chs.length;
+  for (let i = 0; i < FFT_N; i++) {
+    const idx = start + i; let x = 0;
+    if (idx >= 0 && idx < len) { for (let c = 0; c < nc; c++) x += chs[c][idx]; x /= nc; }
+    td[i] = Math.max(0, Math.min(255, 128 + x * 128)) | 0;
+    fftRe[fftRev[i]] = x * fftWin[i]; fftIm[fftRev[i]] = 0;
+  }
+  for (let size = 2; size <= FFT_N; size <<= 1) {
+    const half = size >> 1, step = FFT_N / size;
+    for (let i = 0; i < FFT_N; i += size) for (let j = 0, k = 0; j < half; j++, k += step) {
+      const a = i + j, b = a + half, wr = fftCos[k], wi = -fftSin[k];
+      const tr = fftRe[b] * wr - fftIm[b] * wi, ti = fftRe[b] * wi + fftIm[b] * wr;
+      fftRe[b] = fftRe[a] - tr; fftIm[b] = fftIm[a] - ti; fftRe[a] += tr; fftIm[a] += ti;
+    }
+  }
+  for (let k = 0; k < FFT_N / 2; k++) {
+    const mag = Math.sqrt(fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k]) / FFT_N;
+    fftSm[k] = .2 * fftSm[k] + .8 * mag;
+    const db = 20 * Math.log10(Math.max(fftSm[k], 1e-12));
+    freq[k] = Math.max(0, Math.min(255, Math.floor((db + 100) / 70 * 255)));
+  }
+}
+const yieldUI = () => new Promise(r => { const mc = new MessageChannel(); mc.port1.onmessage = () => r(); mc.port2.postMessage(0); });
+const canOffline = () => !!(window.VideoEncoder && window.AudioEncoder && window.VideoFrame && window.AudioData && window.Mp4Muxer);
+
+async function exportOffline() {
+  const FPS = 60, SR = 48000, ch = Math.min(2, buf.numberOfChannels);
+  let venc = null, aenc = null, err = null, fb = false;
+  pause(); setBusy(true); cancelled = false; offline = true; playing = true;
+  try {
+    msg('Preparing audio…');
+    const oc = new OfflineAudioContext(ch, Math.ceil(buf.duration * SR), SR);
+    const bs = oc.createBufferSource(); bs.buffer = buf; bs.connect(oc.destination); bs.start();
+    const ab = await oc.startRendering();
+    const chs = []; for (let c = 0; c < ch; c++) chs.push(ab.getChannelData(c));
+    const total = ab.length, dur = total / SR;
+
+    const bitrate = Math.min(40e6, Math.max(8e6, W * H * FPS * .25));
+    let vcfg = null;
+    for (const codec of ['avc1.64002A', 'avc1.4D002A', 'avc1.42002A']) {
+      const c = { codec, width: W, height: H, bitrate, framerate: FPS };
+      try { const r = await VideoEncoder.isConfigSupported(c); if (r.supported) { vcfg = c; break; } } catch (e) {}
+    }
+    if (!vcfg) throw Object.assign(new Error('H.264 encoding is not supported here'), { unsupported: true });
+    const acfg = { codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: ch, bitrate: 192000 };
+    const ar = await AudioEncoder.isConfigSupported(acfg);
+    if (!ar.supported) throw Object.assign(new Error('AAC audio encoding is not supported here'), { unsupported: true });
+
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: 'avc', width: W, height: H },
+      audio: { codec: 'aac', numberOfChannels: ch, sampleRate: SR },
+      fastStart: 'in-memory'
+    });
+    venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: e => { err = e; } });
+    venc.configure(vcfg);
+    aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, m), error: e => { err = e; } });
+    aenc.configure(acfg);
+
+    let aPos = 0;
+    const feedAudio = upto => {
+      while (aPos < total && aPos / SR < upto) {
+        const n = Math.min(4800, total - aPos), data = new Float32Array(n * ch);
+        for (let c = 0; c < ch; c++) data.set(chs[c].subarray(aPos, aPos + n), c * n);
+        const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: ch, timestamp: Math.round(aPos / SR * 1e6), data });
+        aenc.encode(ad); ad.close(); aPos += n;
+      }
+    };
+
+    initFFT(); fftSm.fill(0);
+    beat = 0; energy = 0; parts = []; rings = []; notes = []; lastNow = 0; seekBeats(0);
+    const nFrames = Math.ceil(dur * FPS), t0 = performance.now(); let lastUi = 0;
+    for (let i = 0; i < nFrames; i++) {
+      if (cancelled) throw new Error('cancelled');
+      if (err) throw err;
+      const T = i / FPS;
+      fftSpectrum(chs, Math.floor(T * SR));
+      frame(T * 1000, T);
+      const vf = new VideoFrame(cv, { timestamp: Math.round(T * 1e6), duration: Math.round(1e6 / FPS) });
+      venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); vf.close();
+      feedAudio(T + .3);
+      while (venc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 4));
+      const nowMs = performance.now();
+      if (nowMs - lastUi > 250) {
+        lastUi = nowMs;
+        const el = (nowMs - t0) / 1000, done = (i + 1) / nFrames, eta = done > .02 ? el / done - el : 0;
+        msg('Rendering video… ' + Math.round(done * 100) + '%' + (eta ? ' · about ' + fmt(eta) + ' left' : '') + '. Not real-time, so it can’t lag.');
+        await yieldUI();
+      }
+    }
+    feedAudio(Infinity);
+    msg('Finishing file…');
+    await venc.flush(); await aenc.flush();
+    if (err) throw err;
+    muxer.finalize();
+    const name = ($('title').value.replace(/[^\w\- ]+/g, '').trim() || 'album') + '.mp4';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([muxer.target.buffer], { type: 'video/mp4' })); a.download = name; a.click();
+    msg('Saved ' + name + '.');
+  } catch (e) {
+    if (e && e.unsupported) { fb = true; msg('Offline export is not supported here, using real-time recording instead…'); }
+    else msg(cancelled ? 'Export cancelled.' : 'Export failed: ' + (e && e.message || e));
+  } finally {
+    try { if (venc && venc.state !== 'closed') venc.close(); } catch (e) {}
+    try { if (aenc && aenc.state !== 'closed') aenc.close(); } catch (e) {}
+    offline = false; playing = false; offset = 0; beat = 0; seekBeats(0); setBusy(false);
+  }
+  return fb ? 'fallback' : 'done';
+}
+let rtMode = false;
+
 $('rec').onclick = () => {
   if (!buf) return;
+  const useOff = canOffline() && !rtMode; rtMode = false;
+  if (useOff) { exportOffline().then(r => { if (r === 'fallback') { rtMode = true; $('rec').click(); } }); return; }
   if (!window.MediaRecorder) { msg('This browser cannot record video. Try Chrome, Edge, Firefox or Safari 14.1+.'); return; }
   ensureAC(); AC.resume(); pause(); offset = 0;
-  const REC_FPS = 120;
+  const REC_FPS = 60;
   const bitrate = Math.max(8000000, W * H * REC_FPS * 0.25);
   const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   const mime = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -1031,7 +1160,7 @@ $('rec').onclick = () => {
     catch (err) { cancelled = true; pause(); try { rec.stop(); } catch (e) { rec.onstop(); } msg('Could not start recording: ' + (err && err.message || err)); }
   }, 3000);
 };
-$('cancel').onclick = () => { cancelled = true; pause(); if (rec.state !== 'inactive') rec.stop(); else rec.onstop(); };
+$('cancel').onclick = () => { cancelled = true; if (offline) return; pause(); if (rec.state !== 'inactive') rec.stop(); else rec.onstop(); };
 </script>
 </body>
 </html>
