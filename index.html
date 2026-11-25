@@ -54,7 +54,8 @@ select option{color:#111}
 .rec-on canvas{width:2px;height:2px;max-width:none;max-height:none}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .export{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-#rec{padding:13px 24px;border:0;border-radius:12px;background:var(--acc);color:#0a0b12;font:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 8px 28px color-mix(in srgb,var(--acc) 45%,transparent);transition:transform .12s}
+#rec,#share{padding:13px 24px;border:0;border-radius:12px;background:var(--acc);color:#0a0b12;font:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 8px 28px color-mix(in srgb,var(--acc) 45%,transparent);transition:transform .12s}
+#share[hidden]{display:none}
 #rec:hover:not(:disabled){transform:translateY(-2px)}
 #rec:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
 #cancel{padding:12px 18px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:transparent;color:#fff;font:inherit;cursor:pointer}
@@ -74,6 +75,7 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
   <div class="export">
     <button id="rec" disabled>Save as video</button>
     <button id="cancel" hidden>Cancel</button>
+    <button id="share" hidden>Save / Share video</button>
     <span id="msg">Drop an audio file to start. Video export records in real time, so keep this tab open and visible until the song ends.</span>
   </div>
 
@@ -989,11 +991,33 @@ requestAnimationFrame(draw);
 
 // ---- video export (60 fps, normal bitrate, current aspect ratio) ----
 function setBusy(b) {
-  recording = b; document.body.classList.toggle('rec-on', b);
+  recording = b; document.body.classList.toggle('rec-on', b); if (b) $('share').hidden = true;
   $('rec').disabled = $('play').disabled = seekEl.disabled = b;
   $('aud').disabled = $('img').disabled = $('aspect').disabled = b;
   $('cancel').hidden = !b;
 }
+// ---- delivering the finished video: share sheet on phones/tablets, normal download elsewhere ----
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+function deliver(blob, name) {
+  let file = null;
+  try { file = new File([blob], name, { type: blob.type }); } catch (e) {}
+  if (isMobile && file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    // the share sheet needs a fresh tap (a long render uses up the original one), so show a button
+    const btn = $('share'); btn.hidden = false;
+    btn.onclick = async () => {
+      try { await navigator.share({ files: [file], title: name }); msg('Shared ' + name + '.'); }
+      catch (e) { if (e && e.name !== 'AbortError') { download(blob, name); msg('Share failed, downloaded ' + name + ' instead.'); } }
+    };
+    msg('Video ready. Tap “Save / Share video” to open the share sheet.');
+    return;
+  }
+  download(blob, name); msg('Saved ' + name + '.');
+}
+
 // ---- offline (non-realtime) export: WebCodecs + mp4-muxer ----
 // Frames are rendered one by one at exact timestamps and the audio is encoded straight from the decoded buffer,
 // so nothing depends on real-time playback and nothing can lag.
@@ -1106,8 +1130,7 @@ async function exportOffline() {
     if (err) throw err;
     muxer.finalize();
     const name = ($('title').value.replace(/[^\w\- ]+/g, '').trim() || 'album') + '.mp4';
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([muxer.target.buffer], { type: 'video/mp4' })); a.download = name; a.click();
-    msg('Saved ' + name + '.');
+    deliver(new Blob([muxer.target.buffer], { type: 'video/mp4' }), name);
   } catch (e) {
     if (e && e.unsupported) { fb = true; msg('Offline export is not supported here, using real-time recording instead…'); }
     else msg(cancelled ? 'Export cancelled.' : 'Export failed: ' + (e && e.message || e));
@@ -1147,8 +1170,7 @@ $('rec').onclick = () => {
     if (cancelled) { msg('Export cancelled.'); return; }
     const type = rec.mimeType || mime || 'video/webm', ext = type.includes('mp4') ? 'mp4' : 'webm';
     const name = ($('title').value.replace(/[^\w\- ]+/g, '').trim() || 'album') + '.' + ext;
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type })); a.download = name; a.click();
-    msg('Saved ' + name + '.');
+    deliver(new Blob(chunks, { type }), name);
   };
   // pre-warm: hide the UI and let the canvas settle for a moment BEFORE recording starts,
   // then start the recorder and the audio together on the recorder's own start event
