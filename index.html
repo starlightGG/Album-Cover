@@ -1125,15 +1125,15 @@ function frame(now, forcedPos) {
   while (ctx.measureText(title).width > W - 120 * s && fs > 20 * s) ctx.font = fnt(fs -= 2 * s);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 16 * s; ctx.fillStyle = '#fff';
-  ctx.fillText(title, W / 2, author ? H * .845 : H * .88); ctx.shadowBlur = 0;
+  ctx.fillText(title, W / 2, author ? H * .82 : H * .88); ctx.shadowBlur = 0;
   if (author) {
     let af = Math.min(fs * .55, 32 * s); ctx.font = `${fw} ${af}px ${ff}`;
     while (ctx.measureText(author).width > W - 120 * s && af > 14 * s) ctx.font = `${fw} ${af -= 2 * s}px ${ff}`;
     ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 12 * s; ctx.fillStyle = 'rgba(255,255,255,.82)';
-    ctx.fillText(author, W / 2, H * .905); ctx.shadowBlur = 0;
+    ctx.fillText(author, W / 2, H * .91); ctx.shadowBlur = 0;
   }
   const bw2 = (70 + energy * 520) * s; ctx.fillStyle = A(1);
-  ctx.beginPath(); ctx.roundRect(W / 2 - bw2 / 2, H * (author ? .955 : .936), bw2, 5 * s, 3 * s); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(W / 2 - bw2 / 2, H * (author ? .96 : .936), bw2, 5 * s, 3 * s); ctx.fill();
   ctx.restore();
 
   // --- post effects (on the finished frame) ---
