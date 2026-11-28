@@ -971,6 +971,7 @@ function frame(now, forcedPos) {
   }
 
   let cx = W / 2, cy = H / 2 - H * .07, size = 380 * s, round = false, a = 0, gl = 0;
+  const wy = cy; // fixed baseline for the waveform (other animations move cy)
   const cov = {};
 
   const glow = ctx.createRadialGradient(cx, cy, 80 * s, cx, cy, 560 * s);
@@ -1025,7 +1026,7 @@ function frame(now, forcedPos) {
     ctx.beginPath();
     for (let x = 0; x <= W; x += 4) {
       const v = playing && td ? (td[Math.floor(x / W * (td.length - 1))] - 128) / 128 : Math.sin(x / 90 + t * 2) * .04;
-      const y = cy + v * 230 * s; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      const y = wy + v * 230 * s; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     }
     ctx.lineWidth = 4 * s; ctx.strokeStyle = A(.95); ctx.shadowColor = A(1); ctx.shadowBlur = 22 * s; ctx.stroke();
     ctx.shadowBlur = 0; ctx.lineWidth = 1.5 * s; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
