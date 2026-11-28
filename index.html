@@ -517,22 +517,35 @@ function levelAt(env, hopS, t) {
 // walks the grid beat by beat, snapping to the nearest kick/bass onset so it never drifts.
 // gateThr > 0: a beat is only emitted if the kick/bass volume at that moment reaches gateThr (the grid itself keeps running)
 function trackGrid(f, env, hopS, dur, periodAt, t0, minOn, gateThr) {
-  const out = []; let t = t0, miss = 99;
+  const out = [], hitThr = Math.max(.25, minOn * 1.5); let t = t0, miss = 99;
+  // peak of the hit that starts at index i (30 ms at most), so a later louder bass swell can't pull the beat late
+  const peakAt = i => { const e = Math.min(f.length - 1, i + Math.round(.03 / hopS)); while (i < e && f[i + 1] > f[i]) i++; return i; };
   while (t < dur) {
+    if (miss >= 3) { // grid lost in a quiet part: jump straight to the next real hit instead of waiting to re-lock
+      let i = Math.max(0, Math.round(t / hopS));
+      while (i < f.length && f[i] <= hitThr) i++;
+      if (i >= f.length) break;
+      t = peakAt(i) * hopS; miss = 0;
+    }
     const P = 60 / periodAt(t), w = Math.max(2, Math.round(.18 * P / hopS)), i0 = Math.round(t / hopS);
     let bi = -1, bv = minOn;
     for (let j = -w; j <= w; j++) { const v = f[i0 + j]; if (v === undefined) continue; const sc = v * (1 - .5 * Math.abs(j) / w); if (sc > bv) { bv = sc; bi = i0 + j; } }
-    let s;
-    if (bi >= 0) { t += .7 * (bi * hopS - t); s = Math.min(1, .35 + f[bi] * .65); miss = 0; }
+    let s, real = false;
+    if (bi >= 0) { t += .7 * (bi * hopS - t); s = Math.min(1, .35 + f[bi] * .65); miss = 0; real = true; }
     else {
       miss++; s = .45;
-      if (miss >= 2) { // lost the grid (tempo change / halftime): re-lock on the strongest nearby hit
-        let rb = -1, rv = .4; const a = Math.round((t - .5 * P) / hopS), e = Math.round((t + 1.2 * P) / hopS);
-        for (let i = Math.max(0, a); i <= e && i < f.length; i++) if (f[i] > rv) { rv = f[i]; rb = i; }
-        if (rb >= 0) { t = rb * hopS; s = Math.min(1, .35 + f[rb] * .65); miss = 0; }
+      if (miss >= 2) { // lost the grid (tempo change / halftime): re-lock on the FIRST nearby hit (not the loudest, that one is often later)
+        let rb = -1; const a = Math.round((t - .5 * P) / hopS), e = Math.round((t + 1.2 * P) / hopS);
+        for (let i = Math.max(0, a); i <= e && i < f.length; i++) if (f[i] > hitThr) { rb = peakAt(i); break; }
+        if (rb >= 0) { t = rb * hopS; s = Math.min(1, .35 + f[rb] * .65); miss = 0; real = true; }
       }
     }
-    if (miss < 8 && !(gateThr > 0 && levelAt(env, hopS, t) < gateThr)) out.push({ t: Math.max(0, t - ONSET_COMP), s });
+    if (miss < 8 && !(gateThr > 0 && levelAt(env, hopS, t) < gateThr)) {
+      // never two beats crammed together: a real hit replaces a too-close filler beat, otherwise the later one is dropped
+      const T = Math.max(0, t - ONSET_COMP), last = out[out.length - 1];
+      if (!last || T - last.t >= (last.real ? .4 : .7) * P) out.push({ t: T, s, real });
+      else if (real && !last.real) out[out.length - 1] = { t: T, s, real };
+    }
     t += P;
   }
   return out;
