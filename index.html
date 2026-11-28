@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Beat Cover Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Anton&family=Archivo+Black&family=Audiowide&family=Bangers&family=Bebas+Neue&family=Bungee&family=Caveat:wght@700&family=Cinzel:wght@800&family=Dancing+Script:wght@700&family=Lobster&family=Monoton&family=Orbitron:wght@800&family=Oswald:wght@700&family=Pacifico&family=Permanent+Marker&family=Playfair+Display:wght@800&family=Press+Start+2P&family=Righteous&family=Rubik+Mono+One&family=Space+Grotesk:wght@700&family=Special+Elite&display=swap">
 <style>
 :root{--acc:rgb(108,123,255);--beat:0}
 *{box-sizing:border-box}
@@ -53,6 +56,22 @@ select option{color:#111}
 .rec-on .stage{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;border:0;box-shadow:none;border-radius:0}
 .rec-on canvas{width:2px;height:2px;max-width:none;max-height:none}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tabbar{display:flex;gap:6px;padding:4px;border-radius:12px;background:rgba(0,0,0,.28);align-self:flex-start;margin-bottom:6px}
+.tab{padding:8px 18px;border:0;border-radius:9px;background:transparent;color:#a3aac0;font:inherit;font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+.tab:hover{color:#fff}
+.tab.on{background:var(--acc);color:#0a0b12}
+.dd{position:relative}
+.ddbtn{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);color:#fff;font:inherit;font-weight:600;cursor:pointer;text-align:left}
+.ddbtn:hover,.dd.open .ddbtn{border-color:var(--acc)}
+.ddbtn .car{transition:transform .15s;color:#a3aac0}
+.dd.open .car{transform:rotate(180deg)}
+.ddmenu{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;padding:10px;border-radius:14px;background:#12141f;border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 50px rgba(0,0,0,.6);grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:60vh;overflow:auto}
+.dd.open .ddmenu{display:grid}
+.field .chip{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;padding:9px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#eef0f7;font-size:13.5px;cursor:pointer;max-width:none;white-space:normal;user-select:none;transition:background .12s,border-color .12s}
+.field .chip:hover{border-color:var(--acc)}
+.field .chip input{position:absolute;opacity:0;pointer-events:none}
+.field .chip:has(input:checked){background:var(--acc);border-color:var(--acc);color:#0a0b12;font-weight:700}
+.field .chip:has(input:focus-visible){outline:2px solid var(--acc);outline-offset:2px}
 .export{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 #rec,#share{padding:13px 24px;border:0;border-radius:12px;background:var(--acc);color:#0a0b12;font:inherit;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 8px 28px color-mix(in srgb,var(--acc) 45%,transparent);transition:transform .12s}
 #share[hidden]{display:none}
@@ -94,18 +113,56 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
       <label class="tile"><input class="vh" id="img" type="file" accept="image/*,audio/*" multiple>
         <span class="ico" id="thumb">&#9635;</span><span><b>Album cover</b><small id="iname">Choose or drop an image</small></span></label>
       <div class="tile field"><label for="title">Album name</label><input id="title" type="text" value="Album Name" maxlength="80"></div>
+      <div class="tile field"><label for="author">Author name (leave empty to hide)</label><input id="author" type="text" value="Author Name" maxlength="80"></div>
       <div class="tile field"><label for="font">Title font</label>
         <select id="font">
-          <option value='"Avenir Next","Segoe UI",system-ui,sans-serif'>Avenir / Segoe (default)</option>
-          <option value='system-ui,-apple-system,Roboto,sans-serif'>System UI</option>
-          <option value='Georgia,"Times New Roman",serif'>Georgia (serif)</option>
-          <option value='"Times New Roman",Times,serif'>Times</option>
-          <option value='"Palatino Linotype","Book Antiqua",Palatino,serif'>Palatino</option>
-          <option value='"Trebuchet MS",sans-serif'>Trebuchet</option>
-          <option value='Verdana,Geneva,sans-serif'>Verdana</option>
-          <option value='Impact,Haettenschweiler,"Arial Narrow Bold",sans-serif'>Impact</option>
-          <option value='"Courier New",Courier,monospace'>Courier (mono)</option>
-          <option value='"Brush Script MT","Segoe Script",cursive'>Brush Script</option>
+          <option value='"Avenir Next","Segoe UI",system-ui,sans-serif' data-w="800">Avenir / Segoe (default)</option>
+          <option value='system-ui,-apple-system,Roboto,sans-serif' data-w="800">System UI</option>
+          <option value='Arial,Helvetica,sans-serif' data-w="800">Arial</option>
+          <option value='"Arial Black","Arial Bold",Gadget,sans-serif' data-w="400">Arial Black</option>
+          <option value='Tahoma,Geneva,sans-serif' data-w="800">Tahoma</option>
+          <option value='"Trebuchet MS",sans-serif' data-w="800">Trebuchet</option>
+          <option value='Verdana,Geneva,sans-serif' data-w="800">Verdana</option>
+          <option value='"Century Gothic",Futura,"Trebuchet MS",sans-serif' data-w="800">Century Gothic / Futura</option>
+          <option value='"Gill Sans","Gill Sans MT",Calibri,sans-serif' data-w="800">Gill Sans</option>
+          <option value='Optima,Candara,"Segoe UI",sans-serif' data-w="800">Optima / Candara</option>
+          <option value='Impact,Haettenschweiler,"Arial Narrow Bold",sans-serif' data-w="400">Impact</option>
+          <option value='Georgia,"Times New Roman",serif' data-w="800">Georgia (serif)</option>
+          <option value='"Times New Roman",Times,serif' data-w="800">Times</option>
+          <option value='"Palatino Linotype","Book Antiqua",Palatino,serif' data-w="800">Palatino</option>
+          <option value='Garamond,"Hoefler Text","Times New Roman",serif' data-w="800">Garamond</option>
+          <option value='Baskerville,"Baskerville Old Face","Times New Roman",serif' data-w="800">Baskerville</option>
+          <option value='Didot,"Bodoni MT","Times New Roman",serif' data-w="800">Didot / Bodoni</option>
+          <option value='Rockwell,"Courier Bold",serif' data-w="800">Rockwell (slab)</option>
+          <option value='Copperplate,"Copperplate Gothic Light",fantasy' data-w="700">Copperplate</option>
+          <option value='"Courier New",Courier,monospace' data-w="800">Courier (mono)</option>
+          <option value='"Lucida Console",Monaco,monospace' data-w="800">Lucida Console / Monaco</option>
+          <option value='"Brush Script MT","Segoe Script",cursive' data-w="800">Brush Script</option>
+          <option value='"Comic Sans MS","Comic Sans",cursive' data-w="800">Comic Sans</option>
+          <option value='"Marker Felt","Segoe Print","Bradley Hand",cursive' data-w="800">Marker Felt / Segoe Print</option>
+          <option value='Papyrus,fantasy' data-w="800">Papyrus</option>
+          <option value='"Anton",Impact,sans-serif' data-w="400">Anton (web)</option>
+          <option value='"Bebas Neue",Impact,sans-serif' data-w="400">Bebas Neue (web)</option>
+          <option value='"Oswald",Impact,sans-serif' data-w="700">Oswald (web)</option>
+          <option value='"Archivo Black",Arial,sans-serif' data-w="400">Archivo Black (web)</option>
+          <option value='"Space Grotesk",Arial,sans-serif' data-w="700">Space Grotesk (web)</option>
+          <option value='"Righteous",Arial,sans-serif' data-w="400">Righteous (web)</option>
+          <option value='"Audiowide",Arial,sans-serif' data-w="400">Audiowide (web)</option>
+          <option value='"Orbitron",Arial,sans-serif' data-w="800">Orbitron (web)</option>
+          <option value='"Bungee",Impact,sans-serif' data-w="400">Bungee (web)</option>
+          <option value='"Rubik Mono One",Impact,sans-serif' data-w="400">Rubik Mono One (web)</option>
+          <option value='"Monoton",Impact,cursive' data-w="400">Monoton neon (web)</option>
+          <option value='"Press Start 2P","Courier New",monospace' data-w="400">Press Start 2P pixel (web)</option>
+          <option value='"Special Elite","Courier New",monospace' data-w="400">Special Elite typewriter (web)</option>
+          <option value='"Playfair Display",Georgia,serif' data-w="800">Playfair Display (web)</option>
+          <option value='"Abril Fatface",Georgia,serif' data-w="400">Abril Fatface (web)</option>
+          <option value='"Cinzel",Georgia,serif' data-w="800">Cinzel (web)</option>
+          <option value='"Pacifico","Brush Script MT",cursive' data-w="400">Pacifico (web)</option>
+          <option value='"Lobster","Brush Script MT",cursive' data-w="400">Lobster (web)</option>
+          <option value='"Dancing Script","Brush Script MT",cursive' data-w="700">Dancing Script (web)</option>
+          <option value='"Caveat","Segoe Print",cursive' data-w="700">Caveat handwriting (web)</option>
+          <option value='"Permanent Marker","Marker Felt",cursive' data-w="400">Permanent Marker (web)</option>
+          <option value='"Bangers",Impact,cursive' data-w="400">Bangers comic (web)</option>
         </select></div>
       <div class="tile field"><label for="aspect">Aspect ratio</label>
         <select id="aspect">
@@ -113,27 +170,11 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
           <option value="1:1">Square &middot; 1:1 &middot; 1080×1080</option>
           <option value="9:16">Portrait &middot; 9:16 &middot; 1080×1920</option>
         </select></div>
-      <div class="tile field"><label for="mode">Animation</label>
-        <select id="mode">
-          <option value="pulse">Pulse</option>
-          <option value="bars">Spectrum bars</option>
-          <option value="ring">Ring</option>
-          <option value="vinyl">Spinning vinyl</option>
-          <option value="shake">Shake and flash</option>
-          <option value="particles">Particle burst</option>
-          <option value="shock">Shockwave</option>
-          <option value="wave">Waveform</option>
-          <option value="glitch">Glitch</option>
-          <option value="sway">Sway</option>
-          <option value="orbit">Orbit</option>
-          <option value="bounce">Bounce</option>
-          <option value="zoom">Zoom punch</option>
-          <option value="flip">Card flip</option>
-          <option value="tunnel">Album tunnel</option>
-          <option value="echo">Echo ghosts</option>
-          <option value="notes">Floating notes</option>
-          <option value="spiral">Spiral drift</option>
-        </select></div>
+      <div class="tile field wide">
+        <div class="tabbar" role="tablist"><button type="button" class="tab on" id="tabbtn-anim" role="tab" aria-selected="true" data-tab="anim">Animation</button><button type="button" class="tab" id="tabbtn-fx" role="tab" aria-selected="false" data-tab="fx">Effects</button></div>
+        <div id="tab-anim" role="tabpanel"><div class="dd"><button type="button" class="ddbtn" aria-expanded="false" aria-haspopup="true"><span id="ddl-anim"></span><span class="car">&#9662;</span></button><div class="ddmenu" id="modes"></div></div></div>
+        <div id="tab-fx" role="tabpanel" hidden><div class="dd"><button type="button" class="ddbtn" aria-expanded="false" aria-haspopup="true"><span id="ddl-fx"></span><span class="car">&#9662;</span></button><div class="ddmenu" id="fxmenu"></div></div></div>
+      </div>
       <div class="tile field"><label for="bg">Background</label>
         <select id="bg">
           <option value="cover">Blurred cover</option>
@@ -169,9 +210,6 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
         <div><label for="sens">Sensitivity</label><input class="mini" id="sens" type="range" min="2" max="98" step="0.5" value="50"></div>
         <div><label for="gap">Beat spacing</label><input class="mini" id="gap" type="range" min="60" max="600" step="10" value="120"></div>
       </div></div>
-      <div class="tile field"><label>Effects</label><div class="chk">
-        <label><input type="checkbox" id="fx-flash"> Beat flash</label>
-        <label><input type="checkbox" id="fx-grain"> Film grain</label></div></div>
     </div>
   </div>
 </div>
@@ -188,6 +226,45 @@ if (!CanvasRenderingContext2D.prototype.roundRect) CanvasRenderingContext2D.prot
 const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>';
 const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
 $('play').innerHTML = ICON_PLAY;
+
+// ---- animations (combine any number) ----
+const MODES = [['still','No animation (bg pulse only)'],['pulse','Pulse'],['bars','Spectrum bars'],['ring','Ring'],['vinyl','Spinning vinyl'],['shake','Shake and flash'],['particles','Particle burst'],['shock','Shockwave'],['wave','Waveform'],['glitch','Glitch'],['sway','Sway'],['orbit','Orbit'],['bounce','Bounce'],['zoom','Zoom punch'],['flip','Card flip'],['tunnel','Album tunnel'],['echo','Echo ghosts'],['notes','Floating notes'],['spiral','Spiral drift']];
+let modes = new Set(['pulse']);
+const has = m => modes.has(m);
+const FX = [['fx-flash','Beat flash'],['fx-color','Accent flash'],['fx-strobe','Strobe'],['fx-invert','Invert hit'],['fx-flicker','Film flicker'],['fx-grain','Film grain'],['fx-scan','CRT scanlines'],['fx-vig','Pulsing vignette'],['fx-bars','Cinema bars'],['fx-sparks','Sparkles'],['fx-cam','Camera shake'],['fx-rgb','RGB split'],['fx-pix','Pixelate hit']];
+$('modes').innerHTML = MODES.map(([v, n]) => `<label class="chip"><input type="checkbox" data-mode="${v}"${v === 'pulse' ? ' checked' : ''}>${n}</label>`).join('');
+$('fxmenu').innerHTML = FX.map(([id, n]) => `<label class="chip"><input type="checkbox" id="${id}">${n}</label>`).join('');
+const sumLabel = (menu, none) => {
+  const n = [...menu.querySelectorAll('input:checked')].map(i => i.parentElement.textContent.trim());
+  return !n.length ? none : n.length <= 2 ? n.join(' + ') : n.slice(0, 2).join(', ') + ' +' + (n.length - 2) + ' more';
+};
+const refreshDd = () => { $('ddl-anim').textContent = sumLabel($('modes'), 'None selected'); $('ddl-fx').textContent = sumLabel($('fxmenu'), 'None'); };
+const NO_ANIM_MSG = 'Pick at least one animation to play or save.';
+let loadingAudio = false;
+function syncGate() {
+  if (recording || loadingAudio) return;
+  const dis = !buf || !modes.size;
+  $('play').disabled = $('rec').disabled = seekEl.disabled = dis;
+  if (buf && !modes.size) { if (playing) pause(); msg(NO_ANIM_MSG); }
+  else if (buf && $('msg').textContent === NO_ANIM_MSG) msg('Ready. Press play to preview, then Save as video.');
+}
+$('modes').onchange = () => { modes = new Set([...$('modes').querySelectorAll('input:checked')].map(i => i.dataset.mode)); refreshDd(); syncGate(); };
+$('fxmenu').onchange = refreshDd;
+const closeDd = () => document.querySelectorAll('.dd.open').forEach(d => { d.classList.remove('open'); d.querySelector('.ddbtn').setAttribute('aria-expanded', 'false'); });
+document.querySelectorAll('.ddbtn').forEach(b => b.onclick = e => {
+  e.stopPropagation(); const dd = b.parentElement, o = !dd.classList.contains('open'); closeDd();
+  dd.classList.toggle('open', o); b.setAttribute('aria-expanded', o);
+});
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) closeDd(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDd(); });
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  closeDd();
+  document.querySelectorAll('.tab').forEach(x => { const on = x === t; x.classList.toggle('on', on); x.setAttribute('aria-selected', on); $('tab-' + x.dataset.tab).hidden = !on; });
+});
+refreshDd();
+const fontSpec = () => { const o = $('font').selectedOptions[0]; return (o.dataset.w || 800) + ' 40px ' + o.value; };
+const loadFont = () => { try { return document.fonts && document.fonts.load(fontSpec(), ($('title').value + $('author').value) || 'Aa'); } catch (e) {} };
+$('font').onchange = loadFont;
 
 // ---- aspect ratio ----
 const RATIOS = { '16:9': [1280, 720], '1:1': [1080, 1080], '9:16': [1080, 1920] };
@@ -286,7 +363,7 @@ function stopNode() {
   if (node) { node.onended = null; try { node.stop(); } catch (e) {} try { node.disconnect(); } catch (e) {} node = null; }
 }
 function play(from) {
-  if (!buf) return;
+  if (!buf || !modes.size) return;
   ensureAC(); AC.resume();
   stopNode();
   const n = node = AC.createBufferSource();
@@ -315,6 +392,7 @@ seekEl.onchange = () => { if (buf) { const t = seekEl.value / 1000 * buf.duratio
 // ---- offline kick/bass beat map (computed once per track) ----
 // Onset function: fast envelope follower vs slow envelope follower on the isolated low band.
 // A kick or new bass note makes the fast follower jump far above the slow one; sustained bass doesn't.
+// Also returns the plain volume envelope (0..1, normalised to the 99th percentile) used to gate the BPM grid beats.
 const HOP = 128;           // samples per analysis hop (~3 ms)
 const ONSET_COMP = 0.015;  // seconds: fire slightly early to cancel filter + detector delay
 let fxLow = null, fxKick = null, beats = [], beatIdx = 0;
@@ -324,7 +402,8 @@ function onsetFn(b) {
   const d = b.getChannelData(0), n = Math.floor(b.length / HOP), dt = HOP / b.sampleRate;
   const p = new Float32Array(n);
   for (let i = 0; i < n; i++) { let m = 0; const o = i * HOP; for (let k = 0; k < HOP; k++) { const a = Math.abs(d[o + k]); if (a > m) m = a; } p[i] = m; }
-  const eps = Math.max(1e-5, pct(p, .99) * .03);
+  const p99 = pct(p, .99);
+  const eps = Math.max(1e-5, p99 * .03);
   const aFd = 1 - Math.exp(-dt / .03), aSu = 1 - Math.exp(-dt / .12), aSd = 1 - Math.exp(-dt / .25);
   const f = new Float32Array(n); let fast = 0, slow = 0;
   for (let i = 0; i < n; i++) {
@@ -335,14 +414,16 @@ function onsetFn(b) {
   }
   const norm = pct(f, .99) || 1;
   for (let i = 0; i < n; i++) f[i] /= norm;
-  return f;
+  const en = p99 || 1, env = new Float32Array(n);
+  for (let i = 0; i < n; i++) env[i] = Math.min(1.5, p[i] / en);
+  return { f, env };
 }
-function makeFx(f, sr) {
-  const n = f.length, P = new Float64Array(n + 1), P2 = new Float64Array(n + 1);
+function makeFx(o, sr) {
+  const f = o.f, n = f.length, P = new Float64Array(n + 1), P2 = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) { P[i + 1] = P[i] + f[i]; P2[i + 1] = P2[i] + f[i] * f[i]; }
   const fd = new Float32Array(n >> 1);
   for (let i = 0; i < fd.length; i++) fd[i] = Math.max(f[2 * i], f[2 * i + 1]);
-  return { f, P, P2, fd, dtd: 2 * HOP / sr, gBpm: null, curve: null };
+  return { f, env: o.env, P, P2, fd, dtd: 2 * HOP / sr, gBpm: null, curve: null };
 }
 async function analyzeTrack() {
   fxLow = makeFx(onsetFn(bassBuf), bassBuf.sampleRate);
@@ -427,8 +508,15 @@ function bestPhase(f, hopS, P, tMax) {
   }
   return best;
 }
-// walks the grid beat by beat, snapping to the nearest kick/bass onset so it never drifts
-function trackGrid(f, hopS, dur, periodAt, t0, minOn) {
+// volume of the kick/bass band around a beat (0..~1.5): peak of the envelope from just before to just after the hit
+function levelAt(env, hopS, t) {
+  const a = Math.max(0, Math.round((t - .03) / hopS)), e = Math.min(env.length - 1, Math.round((t + .08) / hopS));
+  let m = 0; for (let i = a; i <= e; i++) if (env[i] > m) m = env[i];
+  return m;
+}
+// walks the grid beat by beat, snapping to the nearest kick/bass onset so it never drifts.
+// gateThr > 0: a beat is only emitted if the kick/bass volume at that moment reaches gateThr (the grid itself keeps running)
+function trackGrid(f, env, hopS, dur, periodAt, t0, minOn, gateThr) {
   const out = []; let t = t0, miss = 99;
   while (t < dur) {
     const P = 60 / periodAt(t), w = Math.max(2, Math.round(.18 * P / hopS)), i0 = Math.round(t / hopS);
@@ -444,7 +532,7 @@ function trackGrid(f, hopS, dur, periodAt, t0, minOn) {
         if (rb >= 0) { t = rb * hopS; s = Math.min(1, .35 + f[rb] * .65); miss = 0; }
       }
     }
-    if (miss < 8) out.push({ t: Math.max(0, t - ONSET_COMP), s });
+    if (miss < 8 && !(gateThr > 0 && levelAt(env, hopS, t) < gateThr)) out.push({ t: Math.max(0, t - ONSET_COMP), s });
     t += P;
   }
   return out;
@@ -452,6 +540,8 @@ function trackGrid(f, hopS, dur, periodAt, t0, minOn) {
 
 function buildGridBeats(fx, mode) {
   const hopS = HOP / buf.sampleRate, dur = buf.duration, sens = +$('sens').value / 100, minOn = .04 + (1 - sens) * .14;
+  // auto + live: skip grid beats where the kick/bass volume is below the sensitivity level (low sens = needs louder hit)
+  const gateThr = mode === 'manual' ? 0 : (1 - sens) * .7;
   let periodAt, bpm0;
   if (mode === 'live') {
     if (!fx.curve) fx.curve = liveCurve(fx, dur);
@@ -463,7 +553,7 @@ function buildGridBeats(fx, mode) {
     periodAt = () => bpm; bpm0 = bpm;
   }
   const t0 = bestPhase(fx.f, hopS, 60 / bpm0, Math.min(40, dur));
-  beats = trackGrid(fx.f, hopS, dur, periodAt, t0, minOn);
+  beats = trackGrid(fx.f, fx.env, hopS, dur, periodAt, t0, minOn, gateThr);
 }
 function syncBpmUi() {
   const m = $('bmode').value;
@@ -593,7 +683,7 @@ function buildBlurBg(im) {
 }
 
 async function loadAudio(f) {
-  pause(); msg('Reading audio…'); ensureAC();
+  loadingAudio = true; pause(); msg('Reading audio…'); ensureAC();
   $('play').disabled = $('rec').disabled = seekEl.disabled = true;
   try {
     const ab = await f.arrayBuffer();
@@ -607,10 +697,9 @@ async function loadAudio(f) {
 
     bpmMul = 1; offset = 0; beatIdx = 0;
     $('aname').textContent = f.name;
-    $('play').disabled = $('rec').disabled = seekEl.disabled = false;
-    msg('Ready. Press play to preview, then Save as video.');
+    loadingAudio = false; msg('Ready. Press play to preview, then Save as video.'); syncGate();
   } catch (err) {
-    buf = bassBuf = kickBuf = null; beats = []; msg('Could not read that audio file. Try MP3, WAV, M4A or OGG.');
+    loadingAudio = false; buf = bassBuf = kickBuf = null; beats = []; msg('Could not read that audio file. Try MP3, WAV, M4A or OGG.');
   }
 }
 function loadImage(f) {
@@ -698,7 +787,7 @@ function drawPlasma(t) {
 function drawBG(m, t, dt, s) {
   if (m === 'cover' && bgBlur) {
     const S = bgBlur.width;
-    const z = Math.max(W / S, H / S) * (1.01 + beat * .025 + energy * .03);
+    const z = Math.max(W / S, H / S) * (1.01 + beat * (has('still') ? .09 : .025) + energy * .03);
     const dw = S * z, dh = S * z;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.globalAlpha = .92;
@@ -808,6 +897,47 @@ function drawBG(m, t, dt, s) {
   }
 }
 
+// ---- extra effects helpers ----
+const fx = id => $(id).checked;
+let sparks = [], slPat = null;
+const mkCv = () => document.createElement('canvas');
+const snapC = mkCv(), snapX = snapC.getContext('2d'), tintC = [mkCv(), mkCv(), mkCv()], pxC = mkCv(), pxX = pxC.getContext('2d');
+function snapshot() {
+  if (snapC.width !== W || snapC.height !== H) { snapC.width = W; snapC.height = H; }
+  snapX.globalCompositeOperation = 'copy'; snapX.drawImage(cv, 0, 0); return snapC;
+}
+function tinted(i, src, col) {
+  const c = tintC[i]; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const x = c.getContext('2d');
+  x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, W, H); x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = 'multiply'; x.fillStyle = col; x.fillRect(0, 0, W, H); return c;
+}
+function rgbSplit(d) {
+  const sn = snapshot(), r = tinted(0, sn, '#f00'), g = tinted(1, sn, '#0f0'), b = tinted(2, sn, '#00f');
+  ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(r, -d, 0); ctx.drawImage(g, 0, d * .3); ctx.drawImage(b, d, 0); ctx.restore();
+}
+function pixelate(b) {
+  const w = Math.max(1, Math.round(W / b)), h = Math.max(1, Math.round(H / b));
+  if (pxC.width !== w || pxC.height !== h) { pxC.width = w; pxC.height = h; }
+  pxX.imageSmoothingEnabled = true; pxX.clearRect(0, 0, w, h); pxX.drawImage(cv, 0, 0, w, h);
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(pxC, 0, 0, w, h, 0, 0, W, H); ctx.restore();
+}
+function drawSparks(hit, dt, s) {
+  if (hit) for (let i = 0, n = 8 + Math.round(hit * 22); i < n; i++) sparks.push({ x: Math.random() * W, y: Math.random() * H, vy: -(10 + Math.random() * 40) * s, l: 1, r: (1.5 + Math.random() * 3.5) * s, c: Math.random() < .5 });
+  if (playing && Math.random() < .35) sparks.push({ x: Math.random() * W, y: Math.random() * H, vy: -(10 + Math.random() * 40) * s, l: 1, r: (1 + Math.random() * 2.5) * s, c: Math.random() < .5 });
+  sparks = sparks.filter(p => p.l > 0);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const p of sparks) {
+    p.y += p.vy * dt; p.l -= dt * .9;
+    const a = Math.max(0, p.l), r = p.r * (.6 + a * .6);
+    ctx.fillStyle = p.c ? A(a) : `rgba(255,255,255,${a})`;
+    ctx.fillRect(p.x - r * 3, p.y - r * .3, r * 6, r * .6); ctx.fillRect(p.x - r * .3, p.y - r * 3, r * .6, r * 6);
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
 // ---- frame ----
 function draw(now) { if (!offline) frame(now); requestAnimationFrame(draw); }
 function frame(now, forcedPos) {
@@ -826,9 +956,19 @@ function frame(now, forcedPos) {
     const fx = curFx(); lastBpmUi = now;
     if (fx && fx.curve) $('bpm').value = (curveAt(fx.curve, curPos) * bpmMul).toFixed(1);
   }
-  const hit = analyze(curPos, dt), mode = $('mode').value;
+  const hit = analyze(curPos, dt);
   ctx.fillStyle = '#0a0b12'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  if (fx('fx-cam') && beat > .02) {
+    ctx.translate(W / 2, H / 2); const k = 1 + beat * .03; ctx.scale(k, k);
+    ctx.translate(-W / 2 + (Math.random() - .5) * beat * 26 * s, -H / 2 + (Math.random() - .5) * beat * 26 * s);
+  }
   drawBG($('bg').value, t, dt, s);
+  if (has('still')) {
+    const pg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.hypot(W, H) / 2);
+    pg.addColorStop(0, A(beat * .5)); pg.addColorStop(1, A(beat * .18));
+    ctx.fillStyle = pg; ctx.fillRect(0, 0, W, H);
+  }
 
   let cx = W / 2, cy = H / 2 - H * .07, size = 380 * s, round = false, a = 0, gl = 0;
   const cov = {};
@@ -836,23 +976,24 @@ function frame(now, forcedPos) {
   const glow = ctx.createRadialGradient(cx, cy, 80 * s, cx, cy, 560 * s);
   glow.addColorStop(0, A(.22 + beat * .35)); glow.addColorStop(1, A(0));
   ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-  if (mode === 'shake') { ctx.fillStyle = `rgba(255,255,255,${beat * .2})`; ctx.fillRect(0, 0, W, H); }
+  if (has('shake')) { ctx.fillStyle = `rgba(255,255,255,${beat * .2})`; ctx.fillRect(0, 0, W, H); }
+  if (fx('fx-color') && beat > .02) { ctx.fillStyle = A(Math.min(1, beat) * .4); ctx.fillRect(0, 0, W, H); }
   if ($('fx-flash').checked) { ctx.fillStyle = `rgba(255,255,255,${Math.max(0, beat - .1) * .16})`; ctx.fillRect(0, 0, W, H); }
 
   // --- per-animation setup ---
-  if (mode === 'pulse') size *= 1 + beat * .12;
-  if (mode === 'shake') { size *= 1 + beat * .06; cx += (Math.random() - .5) * beat * 28 * s; cy += (Math.random() - .5) * beat * 28 * s; }
-  if (mode === 'particles') size *= 1 + beat * .05;
-  if (mode === 'glitch') { size *= 1 + beat * .05; gl = beat; cx += (Math.random() - .5) * beat * 14 * s; }
-  if (mode === 'sway') { size *= 1 + beat * .07; a = Math.sin(t * 2.2) * .03 + sway * beat * .09; cy += Math.sin(t * 3) * 6 * s; }
-  if (mode === 'bounce') { size *= 1 + beat * .05; cy -= beat * 60 * s; cov.sx = 1 - beat * .06; cov.sy = 1 + beat * .08; }
-  if (mode === 'zoom') size *= 1 + beat * .22 + energy * .12;
-  if (mode === 'flip') { flipA += dt * (playing ? 2.4 + energy * 4 : .6); cov.sx = Math.cos(flipA); cov.sy = 1 + beat * .05; }
-  if (mode === 'tunnel') size *= 1 + beat * .05;
-  if (mode === 'notes') size *= 1 + beat * .04;
-  if (mode === 'spiral') { const r = 70 * s; cx += Math.cos(t * 1.5) * r; cy += Math.sin(t * 1.5) * r; a = t * 1.5; size *= 1 + beat * .06; }
+  if (has('pulse')) size *= 1 + beat * .12;
+  if (has('shake')) { size *= 1 + beat * .06; cx += (Math.random() - .5) * beat * 28 * s; cy += (Math.random() - .5) * beat * 28 * s; }
+  if (has('particles')) size *= 1 + beat * .05;
+  if (has('glitch')) { size *= 1 + beat * .05; gl = beat; cx += (Math.random() - .5) * beat * 14 * s; }
+  if (has('sway')) { size *= 1 + beat * .07; a += Math.sin(t * 2.2) * .03 + sway * beat * .09; cy += Math.sin(t * 3) * 6 * s; }
+  if (has('bounce')) { size *= 1 + beat * .05; cy -= beat * 60 * s; cov.sx = (cov.sx == null ? 1 : cov.sx) * (1 - beat * .06); cov.sy = (cov.sy == null ? 1 : cov.sy) * (1 + beat * .08); }
+  if (has('zoom')) size *= 1 + beat * .22 + energy * .12;
+  if (has('flip')) { flipA += dt * (playing ? 2.4 + energy * 4 : .6); cov.sx = (cov.sx == null ? 1 : cov.sx) * Math.cos(flipA); cov.sy = (cov.sy == null ? 1 : cov.sy) * (1 + beat * .05); }
+  if (has('tunnel')) size *= 1 + beat * .05;
+  if (has('notes')) size *= 1 + beat * .04;
+  if (has('spiral')) { const r = 70 * s; cx += Math.cos(t * 1.5) * r; cy += Math.sin(t * 1.5) * r; a += t * 1.5; size *= 1 + beat * .06; }
 
-  if (mode === 'bars') {
+  if (has('bars')) {
     size *= 1 + beat * .04;
     const n = 64, bw = W / n;
     for (let i = 0; i < n; i++) {
@@ -861,7 +1002,7 @@ function frame(now, forcedPos) {
       ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(i * bw + 3, H - h, bw - 6, h + 8 * s, 5 * s); ctx.fill();
     }
   }
-  if (mode === 'ring') {
+  if (has('ring')) {
     round = true; size *= 1 + beat * .03;
     const n = 96, R = size / 2 + 16 * s; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
     for (let i = 0; i < n; i++) {
@@ -873,12 +1014,12 @@ function frame(now, forcedPos) {
       ctx.lineTo(cx + Math.cos(ang) * (R + l), cy + Math.sin(ang) * (R + l)); ctx.stroke();
     }
   }
-  if (mode === 'vinyl') {
+  if (has('vinyl')) {
     round = true; size *= 1 + beat * .03;
-    rot += playing ? .012 + energy * .14 : .004; a = rot;
+    rot += playing ? .012 + energy * .14 : .004; a += rot;
     ctx.fillStyle = '#05070b'; ctx.beginPath(); ctx.arc(cx, cy, size / 2 + 22 * s, 0, Math.PI * 2); ctx.fill();
   }
-  if (mode === 'wave') {
+  if (has('wave')) {
     size *= 1 + beat * .05;
     if (!offline && analyser && playing) analyser.getByteTimeDomainData(td);
     ctx.beginPath();
@@ -889,7 +1030,7 @@ function frame(now, forcedPos) {
     ctx.lineWidth = 4 * s; ctx.strokeStyle = A(.95); ctx.shadowColor = A(1); ctx.shadowBlur = 22 * s; ctx.stroke();
     ctx.shadowBlur = 0; ctx.lineWidth = 1.5 * s; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
   }
-  if (mode === 'shock') {
+  if (has('shock')) {
     size *= 1 + beat * .06;
     if (hit) rings.push({ r: size / 2, l: 1, w: hit });
     rings = rings.filter(r => r.l > 0);
@@ -901,7 +1042,7 @@ function frame(now, forcedPos) {
       ctx.beginPath(); ctx.arc(cx, cy, r.r - 8 * s, 0, Math.PI * 2); ctx.stroke();
     }
   }
-  if (mode === 'orbit') {
+  if (has('orbit')) {
     size *= 1 + beat * .04;
     for (let i = 0; i < 36; i++) {
       const v = freq ? freq[1 + i * 10] / 255 : 0, ang = i / 36 * Math.PI * 2 + t * .5 * (i % 2 ? 1 : -1), r = size / 2 + (50 + (i % 3) * 34 + v * 50) * s;
@@ -911,13 +1052,13 @@ function frame(now, forcedPos) {
   }
 
   // --- layered copies behind the main cover ---
-  if (mode === 'tunnel') {
+  if (has('tunnel')) {
     for (let i = 3; i >= 1; i--) {
       const k2 = 1 + i * .24 * (1 + beat * .25);
       cover(cx, cy, size * k2, round, a + i * .06, 0, { alpha: .26 / i });
     }
   }
-  if (mode === 'echo') {
+  if (has('echo')) {
     const off = beat * 24 * s;
     ctx.globalCompositeOperation = 'lighter';
     cover(cx - off, cy, size, round, a, 0, { alpha: .32 });
@@ -926,7 +1067,7 @@ function frame(now, forcedPos) {
   }
 
   // --- particles / notes ---
-  if (hit && mode === 'particles') for (let i = 0, n = 14 + Math.round(34 * hit); i < n; i++) {
+  if (hit && has('particles')) for (let i = 0, n = 14 + Math.round(34 * hit); i < n; i++) {
     const g = Math.random() * Math.PI * 2, sp = (3 + Math.random() * 8) * s * (.6 + hit * .6);
     parts.push({ x: cx + Math.cos(g) * size / 2, y: cy + Math.sin(g) * size / 2, vx: Math.cos(g) * sp, vy: Math.sin(g) * sp, l: 1, c: Math.random() < .5 });
   }
@@ -937,7 +1078,7 @@ function frame(now, forcedPos) {
     ctx.beginPath(); ctx.arc(p.x, p.y, (2 + p.l * 4) * s, 0, Math.PI * 2); ctx.fill();
   }
 
-  if (hit && mode === 'notes') for (let i = 0, n = 3 + Math.round(6 * hit); i < n; i++) {
+  if (hit && has('notes')) for (let i = 0, n = 3 + Math.round(6 * hit); i < n; i++) {
     notes.push({ x: cx + (Math.random() - .5) * size * .9, y: cy + (Math.random() - .4) * size * .5, vy: -(40 + Math.random() * 80) * s, ph: Math.random() * 6.283, l: 1, g: Math.random() < .5 ? '♪' : '♫' });
   }
   notes = notes.filter(n => n.l > 0);
@@ -955,7 +1096,7 @@ function frame(now, forcedPos) {
 
   // --- main cover ---
   cover(cx, cy, size, round, a, gl, cov);
-  if (mode === 'vinyl') { ctx.fillStyle = '#0a0b12'; ctx.beginPath(); ctx.arc(cx, cy, size * .05, 0, Math.PI * 2); ctx.fill(); }
+  if (has('vinyl')) { ctx.fillStyle = '#0a0b12'; ctx.beginPath(); ctx.arc(cx, cy, size * .05, 0, Math.PI * 2); ctx.fill(); }
 
   // --- vignette + grain ---
   const vg = ctx.createRadialGradient(W / 2, H / 2, 300 * s, W / 2, H / 2, 820 * s);
@@ -966,17 +1107,48 @@ function frame(now, forcedPos) {
     ctx.fillStyle = grainPat; ctx.fillRect(-200, -200, W + 200, H + 200); ctx.restore();
   }
 
+  if (fx('fx-vig')) {
+    const pv = ctx.createRadialGradient(W / 2, H / 2, (240 + beat * 300) * s, W / 2, H / 2, 780 * s);
+    pv.addColorStop(0, 'rgba(0,0,0,0)'); pv.addColorStop(1, 'rgba(0,0,0,.8)');
+    ctx.fillStyle = pv; ctx.fillRect(0, 0, W, H);
+  }
+  if (fx('fx-bars')) {
+    const bh = H * (.07 + beat * .025); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, bh); ctx.fillRect(0, H - bh, W, bh);
+  }
   // --- title ---
   const title = $('title').value || '';
   const ff = $('font').value;
-  let fs = 58 * s; const fnt = z => `800 ${z}px ${ff}`;
+  const fw = $('font').selectedOptions[0].dataset.w || 800;
+  const author = ($('author').value || '').trim();
+  let fs = 58 * s; const fnt = z => `${fw} ${z}px ${ff}`;
   ctx.font = fnt(fs);
   while (ctx.measureText(title).width > W - 120 * s && fs > 20 * s) ctx.font = fnt(fs -= 2 * s);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 16 * s; ctx.fillStyle = '#fff';
-  ctx.fillText(title, W / 2, H * .88); ctx.shadowBlur = 0;
+  ctx.fillText(title, W / 2, author ? H * .845 : H * .88); ctx.shadowBlur = 0;
+  if (author) {
+    let af = Math.min(fs * .55, 32 * s); ctx.font = `${fw} ${af}px ${ff}`;
+    while (ctx.measureText(author).width > W - 120 * s && af > 14 * s) ctx.font = `${fw} ${af -= 2 * s}px ${ff}`;
+    ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 12 * s; ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.fillText(author, W / 2, H * .905); ctx.shadowBlur = 0;
+  }
   const bw2 = (70 + energy * 520) * s; ctx.fillStyle = A(1);
-  ctx.beginPath(); ctx.roundRect(W / 2 - bw2 / 2, H * .936, bw2, 5 * s, 3 * s); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(W / 2 - bw2 / 2, H * (author ? .955 : .936), bw2, 5 * s, 3 * s); ctx.fill();
+  ctx.restore();
+
+  // --- post effects (on the finished frame) ---
+  if (fx('fx-sparks')) drawSparks(hit, dt, s);
+  if (fx('fx-scan')) {
+    if (!slPat) { const c = mkCv(); c.width = 1; c.height = 4; const x = c.getContext('2d'); x.fillStyle = 'rgba(0,0,0,.3)'; x.fillRect(0, 2, 1, 2); slPat = ctx.createPattern(c, 'repeat'); }
+    ctx.save(); ctx.translate(0, ((t * 24) % 4) | 0); ctx.fillStyle = slPat; ctx.fillRect(0, -4, W, H + 4); ctx.restore();
+  }
+  if (fx('fx-flicker')) { ctx.fillStyle = `rgba(0,0,0,${Math.random() * .1})`; ctx.fillRect(0, 0, W, H); if (Math.random() < .08) { ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(0, 0, W, H); } }
+  if (fx('fx-strobe') && beat > .05) { ctx.fillStyle = `rgba(255,255,255,${Math.min(1, beat) * .6})`; ctx.fillRect(0, 0, W, H); }
+  if (fx('fx-invert') && beat > .55) {
+    ctx.save(); ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (beat - .55) * 2.2)})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+  if (fx('fx-rgb') && beat > .03) rgbSplit((2 + beat * 22) * s);
+  if (fx('fx-pix') && beat > .1) pixelate(1 + beat * 14 * s);
 
   const d = buf ? buf.duration : 0;
   if (recording) {
@@ -995,6 +1167,7 @@ function setBusy(b) {
   $('rec').disabled = $('play').disabled = seekEl.disabled = b;
   $('aud').disabled = $('img').disabled = $('aspect').disabled = b;
   $('cancel').hidden = !b;
+  if (!b) syncGate();
 }
 // ---- delivering the finished video: share sheet on phones/tablets, normal download elsewhere ----
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
@@ -1065,6 +1238,7 @@ async function exportOffline() {
   pause(); setBusy(true); cancelled = false; offline = true; playing = true;
   try {
     msg('Preparing audio…');
+    try { await loadFont(); } catch (e) {}
     const oc = new OfflineAudioContext(ch, Math.ceil(buf.duration * SR), SR);
     const bs = oc.createBufferSource(); bs.buffer = buf; bs.connect(oc.destination); bs.start();
     const ab = await oc.startRendering();
@@ -1104,7 +1278,7 @@ async function exportOffline() {
     };
 
     initFFT(); fftSm.fill(0);
-    beat = 0; energy = 0; parts = []; rings = []; notes = []; lastNow = 0; seekBeats(0);
+    beat = 0; energy = 0; parts = []; rings = []; notes = []; sparks = []; lastNow = 0; seekBeats(0);
     const nFrames = Math.ceil(dur * FPS), t0 = performance.now(); let lastUi = 0;
     for (let i = 0; i < nFrames; i++) {
       if (cancelled) throw new Error('cancelled');
@@ -1144,7 +1318,7 @@ async function exportOffline() {
 let rtMode = false;
 
 $('rec').onclick = () => {
-  if (!buf) return;
+  if (!buf || !modes.size) return;
   const useOff = canOffline() && !rtMode; rtMode = false;
   if (useOff) { exportOffline().then(r => { if (r === 'fallback') { rtMode = true; $('rec').click(); } }); return; }
   if (!window.MediaRecorder) { msg('This browser cannot record video. Try Chrome, Edge, Firefox or Safari 14.1+.'); return; }
